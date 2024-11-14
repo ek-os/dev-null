@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/eka-os/dbs"
+	"github.com/ek-os/dbs"
 )
 
 func TestDBS(t *testing.T) {
