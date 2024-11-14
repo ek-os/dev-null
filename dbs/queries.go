@@ -32,7 +32,7 @@ func (q *Queries) FindUser(ctx context.Context, id int64) (*User, error) {
 	u := &User{ID: id}
 	if err := q.dbi.QueryRowContext(
 		ctx,
-		"SELECT first_name, last_name FROM users WHERE id = :id",
+		"SELECT first_name, last_name FROM users WHERE id = @id",
 		sql.Named("id", id),
 	).Scan(&u.FirstName, &u.LastName); err != nil {
 		return nil, err
@@ -40,12 +40,15 @@ func (q *Queries) FindUser(ctx context.Context, id int64) (*User, error) {
 	return u, nil
 }
 
-func (q *Queries) SaveUser(ctx context.Context, firstName, lastName string) error {
-	_, err := q.dbi.ExecContext(
+func (q *Queries) SaveUser(ctx context.Context, firstName, lastName string) (int64, error) {
+	res, err := q.dbi.ExecContext(
 		ctx,
-		"INSERT INTO users (first_name, last_name) VALUES (:first_name, :last_name)",
+		"INSERT INTO users (first_name, last_name) VALUES (@first_name, @last_name)",
 		sql.Named("first_name", firstName),
 		sql.Named("last_name", lastName),
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
 }
