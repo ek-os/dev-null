@@ -3,17 +3,21 @@ package dbs
 import (
 	"context"
 	"database/sql"
+	"sync"
 )
 
 func New(db *sql.DB) *DB {
-	return &DB{
-		db:      db,
-		Queries: &Queries{dbi: db},
+	res := &DB{
+		db:    db,
+		stmts: new(sync.Map),
 	}
+	res.Queries = &Queries{stmts: res}
+	return res
 }
 
 type DB struct {
-	db *sql.DB
+	db    *sql.DB
+	stmts *sync.Map
 	*Queries
 }
 
@@ -42,7 +46,7 @@ func (db *DB) Begin() (*Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newTx(tx), nil
+	return newTx(db, tx), nil
 }
 
 func (db *DB) BeginTx(ctx context.Context, opts *TxOptions) (*Tx, error) {
@@ -59,5 +63,30 @@ func (db *DB) BeginTx(ctx context.Context, opts *TxOptions) (*Tx, error) {
 		return nil, err
 	}
 
-	return newTx(tx), nil
+	return newTx(db, tx), nil
+}
+
+func (db *DB) stmt(ctx context.Context, query string) (*sql.Stmt, error) {
+	v, ok := db.stmts.Load(query)
+	if ok {
+		// Statement already prepared and cached.
+		return v.(*sql.Stmt), nil
+	}
+
+	// Statement not yet prepared.
+	stmt, err := db.db.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	res, loaded := db.stmts.LoadOrStore(query, stmt)
+	if loaded {
+		// Another goroutine managed to LoadOrStore first, close statement
+		// and use loaded value.
+		if err := stmt.Close(); err != nil {
+			return nil, err
+		}
+	}
+
+	return res.(*sql.Stmt), nil
 }
