@@ -43,7 +43,7 @@ func (h *IndentHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *IndentHandler) Handle(ctx context.Context, r slog.Record) error {
-	buf := make([]byte, 1024)
+	buf := make([]byte, 0, 1024)
 	if !r.Time.IsZero() {
 		buf = h.appendAttr(buf, slog.Time(slog.TimeKey, r.Time), 0)
 	}
