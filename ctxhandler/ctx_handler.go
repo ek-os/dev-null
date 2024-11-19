@@ -20,8 +20,7 @@ func (c CtxHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 // Handle implements slog.Handler.
 func (c CtxHandler) Handle(ctx context.Context, r slog.Record) error {
-	attrs, ok := ctx.Value(ctxkey{}).(*[]slog.Attr)
-	if ok {
+	if attrs, ok := ctx.Value(ctxkey{}).(*[]slog.Attr); ok {
 		r.AddAttrs(*attrs...)
 	}
 	return c.h.Handle(ctx, r)
@@ -29,12 +28,12 @@ func (c CtxHandler) Handle(ctx context.Context, r slog.Record) error {
 
 // WithAttrs implements slog.Handler.
 func (c CtxHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return c.h.WithAttrs(attrs)
+	return CtxHandler{h: c.h.WithAttrs(attrs)}
 }
 
 // WithGroup implements slog.Handler.
 func (c CtxHandler) WithGroup(name string) slog.Handler {
-	return c.h.WithGroup(name)
+	return CtxHandler{h: c.h.WithGroup(name)}
 }
 
 type ctxkey struct{}
