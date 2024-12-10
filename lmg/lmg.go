@@ -3,11 +3,12 @@ package lmg
 import (
 	"bufio"
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/ek-os/lmg/internal/lmgsql"
 )
 
 const (
@@ -43,9 +44,9 @@ func run(
 		return fmt.Errorf("read changelog: %w", err)
 	}
 
-	db, err := sql.Open(driver, dsn)
+	db, err := lmgsql.Open(driver, dsn)
 	if err != nil {
-		return fmt.Errorf("sql open: %w", err)
+		return fmt.Errorf("lmgsql.Open: %w", err)
 	}
 
 	dir := filepath.Dir(changelogPath)
@@ -79,13 +80,13 @@ func readChangelog(path string) ([]string, error) {
 	return migrationPaths, nil
 }
 
-func executeMigration(ctx context.Context, db *sql.DB, path string) error {
+func executeMigration(ctx context.Context, db lmgsql.DB, path string) error {
 	query, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("read file %s: %w", path, err)
 	}
 
-	if _, err := db.ExecContext(ctx, string(query)); err != nil {
+	if err := db.ExecContext(ctx, string(query)); err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
 
