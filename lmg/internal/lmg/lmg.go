@@ -3,13 +3,19 @@ package lmg
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
 	ENV_CHANGELOG = "LMG_CHANGELOG_PATH"
+	ENV_DRIVER    = "LMG_DRIVER"
+	ENV_DSN       = "LMG_DSN"
 )
 
 func Run() {
@@ -28,15 +34,30 @@ func run(
 	getenv func(string) string,
 	stdout io.Writer,
 ) error {
-	changelogPath := getenv(ENV_CHANGELOG)
+	var (
+		changelogPath = getenv(ENV_CHANGELOG)
+		driver        = getenv(ENV_DRIVER)
+		dsn           = getenv(ENV_DSN)
+	)
+
 	migrations, err := readChangelog(changelogPath)
 	if err != nil {
 		return fmt.Errorf("read changelog: %w", err)
 	}
 
-	for _, migration := range migrations {
-		fmt.Fprintln(stdout, migration)
+	db, err := sql.Open(driver, dsn)
+	if err != nil {
+		return fmt.Errorf("sql open: %w", err)
 	}
+
+	dir := filepath.Dir(changelogPath)
+	for _, migration := range migrations {
+		migrationPath := filepath.Join(dir, migration)
+		if err := executeMigration(ctx, db, migrationPath); err != nil {
+			return fmt.Errorf("execute %s: %w", migrationPath, err)
+		}
+	}
+
 	return nil
 }
 
@@ -58,4 +79,17 @@ func readChangelog(path string) ([]string, error) {
 	}
 
 	return migrationPaths, nil
+}
+
+func executeMigration(ctx context.Context, db *sql.DB, path string) error {
+	query, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	if _, err := db.ExecContext(ctx, string(query)); err != nil {
+		return fmt.Errorf("exec: %w", err)
+	}
+
+	return nil
 }
