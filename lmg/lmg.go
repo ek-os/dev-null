@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 const (

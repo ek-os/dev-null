@@ -6,7 +6,9 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/ek-os/lmg/internal/lmg"
+	"github.com/ek-os/lmg"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestRun(t *testing.T) {
