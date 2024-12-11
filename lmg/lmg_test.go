@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/ek-os/lmg"
@@ -29,40 +30,20 @@ func testCorrectlyAppliesChangelog(t *testing.T) {
 		stdout = &bytes.Buffer{}
 	)
 
-	err := lmg.Test(
+	err := lmg.TestRun(
 		context.Background(),
 		env.get,
 		stdout,
 	)
 	noErr(t, err)
 
-	db, err := sql.Open(driver, dsn)
+	db, err := openTestDB(driver, dsn)
 	noErr(t, err)
 
-	rs, err := db.Query("SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master")
+	exists, err := db.tableExists("users")
 	noErr(t, err)
 
-	type sqliteMasterRow struct {
-		Type     string
-		Name     string
-		TblName  string
-		RootPage int
-		SQL      sql.Null[string]
-	}
-
-	var found bool
-	for rs.Next() {
-		var r sqliteMasterRow
-		err = rs.Scan(&r.Type, &r.Name, &r.TblName, &r.RootPage, &r.SQL)
-		noErr(t, err)
-
-		if r.Name == "users" {
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	if !exists {
 		t.Errorf(`Expected table "users" to be present`)
 	}
 }
@@ -79,7 +60,7 @@ func testFailFindMigration(t *testing.T) {
 		stdout = &bytes.Buffer{}
 	)
 
-	err := lmg.Test(
+	err := lmg.TestRun(
 		context.Background(),
 		env.get,
 		stdout,
@@ -95,7 +76,7 @@ func testFailReadChangelog(t *testing.T) {
 
 	stdout := &bytes.Buffer{}
 
-	err := lmg.Test(
+	err := lmg.TestRun(
 		context.Background(),
 		env.get,
 		stdout,
@@ -126,4 +107,36 @@ func errIsString(t *testing.T, err error, want string) {
 	if got != want {
 		t.Fatalf("Error doesn't match.\nwant: %q\ngot:  %q\n", want, got)
 	}
+}
+
+func openTestDB(driver, dsn string) (testDB, error) {
+	switch driver {
+	case "sqlite3":
+		db, err := sql.Open(driver, dsn)
+		if err != nil {
+			return nil, err
+		}
+		return &sqlite3TestDB{db: db}, nil
+	default:
+		return nil, fmt.Errorf("Unknown driver: %s", driver)
+	}
+}
+
+type testDB interface {
+	tableExists(table string) (bool, error)
+}
+
+type sqlite3TestDB struct {
+	db *sql.DB
+}
+
+func (t *sqlite3TestDB) tableExists(table string) (bool, error) {
+	var exists bool
+	if err := t.db.QueryRow(
+		"SELECT true FROM sqlite_master WHERE name = :name",
+		sql.Named("name", table),
+	).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
 }

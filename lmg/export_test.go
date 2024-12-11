@@ -1,3 +1,3 @@
 package lmg
 
-var Test = run
+var TestRun = run
