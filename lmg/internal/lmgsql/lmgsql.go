@@ -31,5 +31,7 @@ func Open(driver string, dsn string) (DB, error) {
 }
 
 type DB interface {
-	ExecContext(ctx context.Context, query string) error
+	ChangelogExists(ctx context.Context) (bool, error)
+	CreateChangelogTable(ctx context.Context) error
+	MigrateContext(ctx context.Context, query string) error
 }

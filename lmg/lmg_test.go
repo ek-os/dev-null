@@ -12,11 +12,12 @@ import (
 )
 
 func TestRun(t *testing.T) {
-	t.Run("correctly applies changelog migrations", testCorrectlyReadsChangelog)
+	t.Run("correctly applies changelog migrations", testCorrectlyAppliesChangelog)
+	t.Run("returns error when changelog refers to non-existing migration", testFailFindMigration)
 	t.Run("returns error when changelog doesn't exist", testFailReadChangelog)
 }
 
-func testCorrectlyReadsChangelog(t *testing.T) {
+func testCorrectlyAppliesChangelog(t *testing.T) {
 	var (
 		driver = "sqlite3"
 		dsn    = "file::memory:?cache=shared"
@@ -28,14 +29,12 @@ func testCorrectlyReadsChangelog(t *testing.T) {
 		stdout = &bytes.Buffer{}
 	)
 
-	noErr(
-		t,
-		lmg.Test(
-			context.Background(),
-			env.get,
-			stdout,
-		),
+	err := lmg.Test(
+		context.Background(),
+		env.get,
+		stdout,
 	)
+	noErr(t, err)
 
 	db, err := sql.Open(driver, dsn)
 	noErr(t, err)
@@ -43,10 +42,20 @@ func testCorrectlyReadsChangelog(t *testing.T) {
 	rs, err := db.Query("SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master")
 	noErr(t, err)
 
+	type sqliteMasterRow struct {
+		Type     string
+		Name     string
+		TblName  string
+		RootPage int
+		SQL      sql.Null[string]
+	}
+
 	var found bool
 	for rs.Next() {
 		var r sqliteMasterRow
-		noErr(t, rs.Scan(&r.Type, &r.Name, &r.TblName, &r.RootPage, &r.SQL))
+		err = rs.Scan(&r.Type, &r.Name, &r.TblName, &r.RootPage, &r.SQL)
+		noErr(t, err)
+
 		if r.Name == "users" {
 			found = true
 			break
@@ -56,6 +65,27 @@ func testCorrectlyReadsChangelog(t *testing.T) {
 	if !found {
 		t.Errorf(`Expected table "users" to be present`)
 	}
+}
+
+func testFailFindMigration(t *testing.T) {
+	var (
+		driver = "sqlite3"
+		dsn    = ":memory:"
+		env    = mapenv{
+			lmg.ENV_CHANGELOG: "testdata/changelog-dud.txt",
+			lmg.ENV_DRIVER:    driver,
+			lmg.ENV_DSN:       dsn,
+		}
+		stdout = &bytes.Buffer{}
+	)
+
+	err := lmg.Test(
+		context.Background(),
+		env.get,
+		stdout,
+	)
+
+	errIsString(t, err, "execute testdata/migrations/bar.sql: open testdata/migrations/bar.sql: no such file or directory")
 }
 
 func testFailReadChangelog(t *testing.T) {
@@ -71,14 +101,7 @@ func testFailReadChangelog(t *testing.T) {
 		stdout,
 	)
 
-	var (
-		gotErr  = err.Error()
-		wantErr = "read changelog: open foo: no such file or directory"
-	)
-
-	if gotErr != wantErr {
-		t.Errorf("Error doesn't match.\nwant: %q\ngot:  %q\n", wantErr, gotErr)
-	}
+	errIsString(t, err, "read changelog: open foo: no such file or directory")
 }
 
 type mapenv map[string]string
@@ -97,10 +120,10 @@ func noErr(t *testing.T, err error) {
 	}
 }
 
-type sqliteMasterRow struct {
-	Type     string
-	Name     string
-	TblName  string
-	RootPage int
-	SQL      sql.Null[string]
+func errIsString(t *testing.T, err error, want string) {
+	t.Helper()
+	got := err.Error()
+	if got != want {
+		t.Fatalf("Error doesn't match.\nwant: %q\ngot:  %q\n", want, got)
+	}
 }

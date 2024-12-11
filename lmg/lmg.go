@@ -49,11 +49,9 @@ func run(
 		return fmt.Errorf("lmgsql.Open: %w", err)
 	}
 
-	dir := filepath.Dir(changelogPath)
 	for _, migration := range migrations {
-		migrationPath := filepath.Join(dir, migration)
-		if err := executeMigration(ctx, db, migrationPath); err != nil {
-			return fmt.Errorf("execute %s: %w", migrationPath, err)
+		if err := executeMigration(ctx, db, migration); err != nil {
+			return fmt.Errorf("execute %s: %w", migration, err)
 		}
 	}
 
@@ -67,10 +65,14 @@ func readChangelog(path string) ([]string, error) {
 	}
 	defer f.Close()
 
-	var migrationPaths []string
-	s := bufio.NewScanner(f)
+	var (
+		migrationPaths []string
+		s              = bufio.NewScanner(f)
+		dir            = filepath.Dir(path)
+	)
 	for s.Scan() {
-		migrationPaths = append(migrationPaths, s.Text())
+		migrationPath := filepath.Join(dir, s.Text())
+		migrationPaths = append(migrationPaths, migrationPath)
 	}
 
 	if err := s.Err(); err != nil {
@@ -83,10 +85,10 @@ func readChangelog(path string) ([]string, error) {
 func executeMigration(ctx context.Context, db lmgsql.DB, path string) error {
 	query, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read file %s: %w", path, err)
+		return err
 	}
 
-	if err := db.ExecContext(ctx, string(query)); err != nil {
+	if err := db.MigrateContext(ctx, string(query)); err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
 
