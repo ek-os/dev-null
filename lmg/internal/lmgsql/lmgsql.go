@@ -6,12 +6,17 @@ import (
 	"fmt"
 )
 
-const CHANGELOG_TABLE_NAME = "lmg_changelog"
+const (
+	CHANGELOG_TABLE_NAME = "lmg_changelog"
+	LOCK_TABLE_NAME      = "lmg_lock"
+)
 
 type DB interface {
-	ChangelogExists(ctx context.Context) (bool, error)
+	ChangelogTableExists(ctx context.Context) (bool, error)
 	CreateChangelogTable(ctx context.Context) error
-	MigrateContext(ctx context.Context, query string) error
+	LockTableExists(ctx context.Context) (bool, error)
+	CreateLockTable(ctx context.Context) error
+	Exec(ctx context.Context, query string) error
 }
 
 func Open(driver, dsn string) (DB, error) {
@@ -32,5 +37,5 @@ type ErrUnknownDriver struct {
 }
 
 func (e *ErrUnknownDriver) Error() string {
-	return fmt.Sprintf("Unknown driver: %s", e.Driver)
+	return fmt.Sprintf("unknown driver: %s", e.Driver)
 }

@@ -18,40 +18,81 @@ const (
 )
 
 func Run() {
-	if err := run(
-		context.Background(),
-		os.Getenv,
-		os.Stdout,
-	); err != nil {
+	if err := run(context.Background(), realSystem{}); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(
-	ctx context.Context,
-	getenv func(string) string,
-	stdout io.Writer,
-) error {
-	var (
-		changelogPath = getenv(ENV_CHANGELOG)
-		driver        = getenv(ENV_DRIVER)
-		dsn           = getenv(ENV_DSN)
-	)
+type system interface {
+	Getenv(key string) string
+	Stdout() io.Writer
+}
 
-	migrations, err := readChangelog(changelogPath)
-	if err != nil {
-		return fmt.Errorf("read changelog: %w", err)
-	}
+type realSystem struct{}
+
+func (realSystem) Getenv(key string) string {
+	return os.Getenv(key)
+}
+
+func (realSystem) Stdout() io.Writer {
+	return os.Stdout
+}
+
+func run(ctx context.Context, sys system) error {
+	var (
+		changelogPath = sys.Getenv(ENV_CHANGELOG)
+		driver        = sys.Getenv(ENV_DRIVER)
+		dsn           = sys.Getenv(ENV_DSN)
+	)
 
 	db, err := lmgsql.Open(driver, dsn)
 	if err != nil {
 		return fmt.Errorf("lmgsql.Open: %w", err)
 	}
 
+	if err := ensureLockTableExists(ctx, db); err != nil {
+		return err
+	}
+
+	migrations, err := readChangelog(changelogPath)
+	if err != nil {
+		return fmt.Errorf("read changelog: %w", err)
+	}
+
 	for _, migration := range migrations {
 		if err := executeMigration(ctx, db, migration); err != nil {
 			return fmt.Errorf("execute %s: %w", migration, err)
+		}
+	}
+
+	return nil
+}
+
+func ensureChangelogTableExists(ctx context.Context, db lmgsql.DB) error {
+	ok, err := db.ChangelogTableExists(ctx)
+	if err != nil {
+		return fmt.Errorf("check if changelog table exists: %w", err)
+	}
+
+	if !ok {
+		if err := db.CreateChangelogTable(ctx); err != nil {
+			return fmt.Errorf("create changelog table: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func ensureLockTableExists(ctx context.Context, db lmgsql.DB) error {
+	ok, err := db.LockTableExists(ctx)
+	if err != nil {
+		return fmt.Errorf("check if lock table exists: %w", err)
+	}
+
+	if !ok {
+		if err := db.CreateLockTable(ctx); err != nil {
+			return fmt.Errorf("create lock table: %w", err)
 		}
 	}
 
@@ -71,6 +112,9 @@ func readChangelog(path string) ([]string, error) {
 		dir            = filepath.Dir(path)
 	)
 	for s.Scan() {
+		if len(s.Text()) == 0 {
+			continue
+		}
 		migrationPath := filepath.Join(dir, s.Text())
 		migrationPaths = append(migrationPaths, migrationPath)
 	}
@@ -88,7 +132,7 @@ func executeMigration(ctx context.Context, db lmgsql.DB, path string) error {
 		return err
 	}
 
-	if err := db.MigrateContext(ctx, string(query)); err != nil {
+	if err := db.Exec(ctx, string(query)); err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
 
